@@ -43,6 +43,9 @@ use zenoh_result::ZResult;
 use zenoh_transport::{multicast::TransportMulticast, unicast::TransportUnicast};
 
 pub mod downsampling;
+
+#[cfg(feature = "observer")]
+pub(crate) mod observer;
 use crate::{
     key_expr::KeyExpr,
     net::routing::{
