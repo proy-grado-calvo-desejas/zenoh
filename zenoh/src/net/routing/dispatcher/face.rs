@@ -299,14 +299,14 @@ impl FaceState {
         }
     }
 
-    pub(crate) fn set_interceptors_from_factories(
+    pub(crate) fn set_interceptors_from_factories<'a>(
         &self,
-        factories: &[InterceptorFactory],
+        factories: impl IntoIterator<Item = &'a InterceptorFactory>,
         version: usize,
     ) {
         if let Some(mux) = self.primitives.as_any().downcast_ref::<Mux>() {
             let (ingress, egress): (Vec<_>, Vec<_>) = factories
-                .iter()
+                .into_iter()
                 .map(|itor| itor.new_transport_unicast(&mux.handler))
                 .unzip();
             let (ingress, egress) = (
@@ -322,7 +322,7 @@ impl FaceState {
         } else if let Some(mux) = self.primitives.as_any().downcast_ref::<McastMux>() {
             let interceptor = InterceptorsChain::new(
                 factories
-                    .iter()
+                    .into_iter()
                     .filter_map(|itor| itor.new_transport_multicast(&mux.handler))
                     .collect::<Vec<EgressInterceptor>>(),
                 version,
@@ -332,7 +332,7 @@ impl FaceState {
         } else if let Some(transport) = &self.mcast_group {
             let interceptor = InterceptorsChain::new(
                 factories
-                    .iter()
+                    .into_iter()
                     .filter_map(|itor| itor.new_peer_multicast(transport))
                     .collect::<Vec<IngressInterceptor>>(),
                 version,

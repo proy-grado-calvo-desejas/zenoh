@@ -134,7 +134,15 @@ pub(crate) struct TablesData {
     pub(crate) face_counter: FaceId,
 
     pub(crate) next_interceptor_version: AtomicUsize,
+    /// Interceptor factories built from the config. Rebuilt by [`TablesLock::update_config`].
     pub(crate) interceptors: Vec<InterceptorFactory>,
+    /// Interceptor factories registered at runtime (e.g. message observers from plugins),
+    /// keyed by registration id. Kept apart from `interceptors` so that config updates don't
+    /// drop them. They run after the config ones.
+    #[cfg(feature = "observer")]
+    pub(crate) runtime_interceptors: Vec<(usize, InterceptorFactory)>,
+    #[cfg(feature = "observer")]
+    pub(crate) next_runtime_interceptor_id: usize,
 
     pub(crate) faces: HashMap<FaceId, Arc<FaceState>>,
 
@@ -201,6 +209,10 @@ impl TablesData {
             interests_timeout,
             root_res: Resource::root(),
             interceptors: interceptor_factories(config)?,
+            #[cfg(feature = "observer")]
+            runtime_interceptors: Vec::new(),
+            #[cfg(feature = "observer")]
+            next_runtime_interceptor_id: 0,
             next_interceptor_version: AtomicUsize::new(0),
             hats: hat,
             face_counter: 0,
@@ -515,6 +527,16 @@ impl InterRegionFilter<'_> {
     }
 }
 
+impl TablesData {
+    /// All interceptor factories, in chain order: config ones first, then runtime ones.
+    pub(crate) fn all_interceptor_factories(&self) -> impl Iterator<Item = &InterceptorFactory> {
+        let factories = self.interceptors.iter();
+        #[cfg(feature = "observer")]
+        let factories = factories.chain(self.runtime_interceptors.iter().map(|(_, f)| f));
+        factories
+    }
+}
+
 impl Debug for Tables {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Tables").finish()
@@ -535,14 +557,52 @@ impl TablesLock {
         }
         tables.data.interceptors = interceptor_factories(config)?;
         drop(tables);
+        self.refresh_interceptors();
+        Ok(())
+    }
+
+    /// Rebuilds the interceptor chains of every face from the current factories, under a new
+    /// version so that per-resource caches get recomputed.
+    fn refresh_interceptors(&self) {
         let tables = zread!(self.tables);
         let version = tables
             .data
             .next_interceptor_version
-            .fetch_add(1, Ordering::SeqCst);
+            .fetch_add(1, Ordering::SeqCst)
+            + 1;
         tables.data.faces.values().for_each(|face| {
-            face.set_interceptors_from_factories(&tables.data.interceptors, version + 1);
+            face.set_interceptors_from_factories(tables.data.all_interceptor_factories(), version);
         });
-        Ok(())
+    }
+
+    /// Registers an interceptor factory at runtime and applies it to every existing face.
+    /// New faces pick it up when they are created. Returns an id for
+    /// [`TablesLock::remove_runtime_interceptor`].
+    #[cfg(feature = "observer")]
+    pub(crate) fn add_runtime_interceptor(&self, factory: InterceptorFactory) -> usize {
+        let id = {
+            let mut tables = zwrite!(self.tables);
+            let id = tables.data.next_runtime_interceptor_id;
+            tables.data.next_runtime_interceptor_id += 1;
+            tables.data.runtime_interceptors.push((id, factory));
+            id
+        };
+        self.refresh_interceptors();
+        id
+    }
+
+    /// Removes a factory registered with [`TablesLock::add_runtime_interceptor`] and rebuilds the
+    /// chains without it. Unknown ids are ignored.
+    #[cfg(feature = "observer")]
+    pub(crate) fn remove_runtime_interceptor(&self, id: usize) {
+        let removed = {
+            let mut tables = zwrite!(self.tables);
+            let before = tables.data.runtime_interceptors.len();
+            tables.data.runtime_interceptors.retain(|(i, _)| *i != id);
+            tables.data.runtime_interceptors.len() != before
+        };
+        if removed {
+            self.refresh_interceptors();
+        }
     }
 }

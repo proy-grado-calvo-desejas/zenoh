@@ -211,6 +211,14 @@ pub trait IRuntime: Send + Sync {
     fn get_zids(&self, whatami: WhatAmI) -> Box<dyn Iterator<Item = ZenohId> + Send + Sync>;
     fn new_handler(&self, handler: Arc<dyn TransportEventHandler>);
 
+    /// Registers a read-only message observer on every transport of this node, current and
+    /// future. It stays registered until the returned handle is dropped.
+    #[cfg(feature = "observer")]
+    fn add_message_observer(
+        &self,
+        factory: Arc<dyn crate::api::observer::MessageObserverFactory>,
+    ) -> crate::api::observer::ObserverHandle;
+
     #[cfg(feature = "shared-memory")]
     #[zenoh_macros::unstable]
     fn get_shm_provider(&self) -> ShmProviderState;
@@ -333,6 +341,18 @@ impl IRuntime for RuntimeState {
 
     fn new_handler(&self, handler: Arc<dyn TransportEventHandler>) {
         zwrite!(self.transport_handlers).push(handler);
+    }
+
+    #[cfg(feature = "observer")]
+    fn add_message_observer(
+        &self,
+        factory: Arc<dyn crate::api::observer::MessageObserverFactory>,
+    ) -> crate::api::observer::ObserverHandle {
+        let tables = &self.router.tables;
+        let id = tables.add_runtime_interceptor(Box::new(
+            crate::net::routing::interceptor::observer::ObserverInterceptorFactory::new(factory),
+        ));
+        crate::api::observer::ObserverHandle::new(Arc::downgrade(tables), id)
     }
 
     fn get_transports(&self) -> Box<dyn Iterator<Item = Transport> + Send + Sync> {
@@ -880,6 +900,16 @@ impl fmt::Debug for Runtime {
 pub struct DynamicRuntime(Arc<dyn IRuntime>);
 
 impl DynamicRuntime {
+    /// Registers a read-only message observer on every transport of this node, current and
+    /// future. It stays registered until the returned handle is dropped.
+    #[cfg(feature = "observer")]
+    pub fn add_message_observer(
+        &self,
+        factory: Arc<dyn crate::api::observer::MessageObserverFactory>,
+    ) -> crate::api::observer::ObserverHandle {
+        self.0.add_message_observer(factory)
+    }
+
     pub(crate) fn downgrade(&self) -> WeakDynamicRuntime {
         WeakDynamicRuntime(Arc::downgrade(&self.0))
     }
@@ -924,6 +954,16 @@ impl WeakDynamicRuntime {
 }
 
 impl Runtime {
+    /// Registers a read-only message observer on every transport of this node, current and
+    /// future. It stays registered until the returned handle is dropped.
+    #[cfg(feature = "observer")]
+    pub fn add_message_observer(
+        &self,
+        factory: Arc<dyn crate::api::observer::MessageObserverFactory>,
+    ) -> crate::api::observer::ObserverHandle {
+        self.state.add_message_observer(factory)
+    }
+
     #[inline(always)]
     pub(crate) fn manager(&self) -> &TransportManager {
         self.state.manager()
