@@ -173,6 +173,11 @@
 //!
 //!   Enable the dynamic plugins loading. Includes `plugins`. May be removed in future and combined with `plugins`
 //!
+//! * `observer`
+//!
+//!   Enable the read-only message observer API, which lets plugins running in the same process see the
+//!   messages this node routes (see `zenoh::internal::observer`)
+//!
 //! * `shared-memory`
 //!
 //!   Enable shared-memory transport support and specific shared-memory related APIs
@@ -255,6 +260,7 @@ pub const FEATURES: &str = zenoh_util::concat_enabled_features!(
     features = [
         "auth_pubkey",
         "auth_usrpwd",
+        "observer",
         "shared-memory",
         "stats",
         "transport_multilink",
@@ -1072,6 +1078,15 @@ pub mod internal {
     pub mod plugins {
         pub use crate::api::plugins::{
             PluginsManager, Response, RunningPlugin, RunningPluginTrait, ZenohPlugin, PLUGIN_PREFIX,
+        };
+    }
+
+    /// Read-only observation of the messages this node routes, for plugins.
+    #[cfg(feature = "observer")]
+    pub mod observer {
+        pub use crate::api::observer::{
+            Direction, MessageKind, MessageObserver, MessageObserverFactory, ObservedMessage,
+            ObserverHandle, Space, TransportInfo,
         };
     }
 

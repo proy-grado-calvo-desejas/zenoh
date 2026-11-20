@@ -28,6 +28,8 @@ pub(crate) mod liveliness;
 #[cfg(feature = "plugins")]
 pub(crate) mod loader;
 pub(crate) mod matching;
+#[cfg(feature = "observer")]
+pub(crate) mod observer;
 #[cfg(feature = "plugins")]
 pub(crate) mod plugins;
 pub(crate) mod publisher;

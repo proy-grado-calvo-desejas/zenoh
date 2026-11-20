@@ -14,6 +14,7 @@
 
 mod interceptor_cache;
 mod link_weights;
+mod observer;
 
 mod query_reply;
 mod session;

@@ -50,6 +50,7 @@ internal = [
   "zenoh-protocol/internal",
 ]
 internal_config = []
+observer = ["internal"]
 plugins = []
 runtime_plugins = ["plugins"]
 shared-memory = [
